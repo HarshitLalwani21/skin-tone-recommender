@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TONEFIT — Skin Tone Based Styling</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="logo">TONEFIT</div>
+    <div class="nav-links">
+        <a href="#" class="active">Home</a>
+        <a href="#how">How It Works</a>
+    </div>
+</nav>
+
+<section class="hero">
+    <span class="tag">AI Powered Styling</span>
+    <h1>Discover clothes that<br>truly suit <span class="highlight">you</span></h1>
+    <p class="subtitle">Upload a photo, tell us what you're shopping for, and let AI find your perfect picks.</p>
+</section>
+
+<section class="app-section" id="how">
+    <div class="card">
+        <h2>Step 1 — Upload Your Photo</h2>
+        <div class="upload-box" id="uploadBox">
+            <input type="file" id="photoInput" accept="image/*" hidden>
+            <p id="uploadText">Click to upload or drag a photo here</p>
+            <img id="previewImg" style="display:none; max-width:200px; border-radius:12px; margin-top:12px;">
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Step 2 — Tell Us What You Need</h2>
+        <div class="form-grid">
+            <div class="form-group">
+                <label>Clothing Type</label>
+                <input type="text" id="clothingType" placeholder="e.g. shirt, kurta, t-shirt">
+            </div>
+            <div class="form-group">
+                <label>Size</label>
+                <select id="size">
+                    <option>S</option>
+                    <option selected>M</option>
+                    <option>L</option>
+                    <option>XL</option>
+                    <option>XXL</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Occasion</label>
+                <select id="occasion">
+                    <option>Casual</option>
+                    <option>Formal</option>
+                    <option>Party</option>
+                    <option>Ethnic</option>
+                </select>
+            </div>
+        </div>
+        <button id="analyzeBtn">Find My Style</button>
+    </div>
+
+    <div class="card result-card" id="resultCard" style="display:none;">
+        <h2>Recommended For You</h2>
+        <div id="loadingSpinner" style="display:none;">Analyzing... please wait</div>
+        <div id="resultContent"></div>
+    </div>
+</section>
+
+<footer>
+    <p>Built with CNN Transfer Learning + Groq AI</p>
+</footer>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
