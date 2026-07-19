@@ -1,24 +1,30 @@
-from dotenv import load_dotenv
-load_dotenv()
 from flask import Flask, request, jsonify, render_template
-import keras
+import tensorflow as tf
 import numpy as np
-from tensorflow.keras.preprocessing import image
+from PIL import Image
 from mtcnn import MTCNN
 import cv2
 import os
 import json
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
+load_dotenv()
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # ============================================
-# Load Trained Model Once (at startup)
+# Load TFLite Model Once (at startup) — Lightweight, Memory-Friendly
 # ============================================
-model = keras.models.load_model("skin_tone_model.keras")
+interpreter = tf.lite.Interpreter(model_path="skin_tone_model.tflite")
+interpreter.allocate_tensors()
+
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
 class_names = ["deep", "medium", "fair"]  # match training order
 
 # ============================================
@@ -50,15 +56,17 @@ def crop_face(img_path, output_path):
     return output_path
 
 # ============================================
-# Predict Skin Tone (Using Our Trained CNN Model)
+# Predict Skin Tone (Using TFLite Interpreter)
 # ============================================
 def predict_skin_tone(img_path):
-    img = image.load_img(img_path, target_size=(224, 224))
-    img_array = image.img_to_array(img)
+    img = Image.open(img_path).convert("RGB").resize((224, 224))
+    img_array = np.array(img, dtype=np.float32)
     img_array = np.expand_dims(img_array, axis=0)
-    img_array = keras.applications.resnet50.preprocess_input(img_array)
+    img_array = tf.keras.applications.resnet50.preprocess_input(img_array)
 
-    prediction = model.predict(img_array, verbose=0)[0]
+    interpreter.set_tensor(input_details[0]['index'], img_array)
+    interpreter.invoke()
+    prediction = interpreter.get_tensor(output_details[0]['index'])[0]
 
     probabilities = {
         class_names[i]: round(float(prediction[i]) * 100, 2)
@@ -71,8 +79,7 @@ def predict_skin_tone(img_path):
     return predicted_class, confidence, probabilities
 
 # ============================================
-# Get Clothing + Accessory Suggestions
-# Gemini decides colors ITSELF from the raw probabilities (no hardcoded table)
+# Get Clothing + Accessory Suggestions (Gemini decides colors itself)
 # ============================================
 def get_clothing_suggestions(probabilities, clothing_type, size, occasion):
     prob_str = ", ".join([f"{k}: {v}%" for k, v in probabilities.items()])
@@ -85,8 +92,7 @@ A machine learning model analyzed a person's face and produced these skin tone p
 
 Based on established color theory and skin undertone matching principles, decide for 
 yourself which colors would best complement this specific skin tone profile (treat the 
-percentages as a blend, not just the top category — e.g. if it's mostly medium with some 
-tan, lean toward colors that suit both).
+percentages as a blend, not just the top category).
 
 Then:
 
@@ -111,8 +117,7 @@ STRICT RULES:
 5. Do NOT search for or list accessories as purchasable products — only mention their colors 
    in the "accessory_guidance" section.
 
-Return ONLY a valid JSON object, with no extra text before or after it, no markdown formatting, 
-in this exact format:
+Return ONLY a valid JSON object, with no extra text before or after it, no markdown formatting:
 {{
   "accessory_guidance": {{
     "watch": "recommended color + short reason",
