@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import cv2
 import os
+import time
 import json
 from dotenv import load_dotenv
 from google import genai
@@ -125,12 +126,25 @@ Return ONLY a valid JSON object, no extra text, no markdown:
 
 Give 5-6 genuine clothing results, covering different suitable colors.
 """
+    max_retries = 3
+    response = None
+    for attempt in range(max_retries):
+        try:
+            response = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(tools=[google_search_tool])
+            )
+            break
+        except Exception as e:
+            print(f"Attempt {attempt+1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(3)
+            else:
+                return {"accessory_guidance": {}, "products": []}
 
-    response = gemini_client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(tools=[google_search_tool])
-    )
+    raw_text = response.text.strip()
+   
 
     raw_text = response.text.strip()
     start_idx = raw_text.find('{')
