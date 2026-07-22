@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify, render_template
 import tensorflow as tf
 import numpy as np
 from PIL import Image
-from mtcnn import MTCNN
 import cv2
 import os
 import json
@@ -17,7 +16,7 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # ============================================
-# Load TFLite Model Once (at startup) — Lightweight, Memory-Friendly
+# Load TFLite Model Once (at startup) — Lightweight
 # ============================================
 interpreter = tf.lite.Interpreter(model_path="skin_tone_model.tflite")
 interpreter.allocate_tensors()
@@ -25,38 +24,35 @@ interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-class_names = ["deep", "medium", "fair"]  # match training order
+class_names = ["deep", "medium", "fair"]
 
 # ============================================
-# Gemini Client (Web Search via Google Search Grounding)
+# Gemini Client
 # ============================================
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-
 google_search_tool = types.Tool(google_search=types.GoogleSearch())
 
-detector = MTCNN()
+# ============================================
+# Face Detection — Lightweight Haar Cascade (No MTCNN, No TensorFlow overhead)
+# ============================================
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-# ============================================
-# Face Crop
-# ============================================
 def crop_face(img_path, output_path):
     img = cv2.imread(img_path)
     if img is None:
         return None
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    faces = detector.detect_faces(img_rgb)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
     if len(faces) == 0:
         return None
-    x, y, w, h = faces[0]['box']
-    x, y = max(0, x), max(0, y)
-    face_crop = img_rgb[y:y+h, x:x+w]
-    face_crop_bgr = cv2.cvtColor(face_crop, cv2.COLOR_RGB2BGR)
-    cv2.imwrite(output_path, face_crop_bgr)
+    x, y, w, h = faces[0]
+    face_crop = img[y:y+h, x:x+w]
+    cv2.imwrite(output_path, face_crop)
     return output_path
 
 # ============================================
-# Predict Skin Tone (Using TFLite Interpreter)
+# Predict Skin Tone (TFLite Interpreter)
 # ============================================
 def predict_skin_tone(img_path):
     img = Image.open(img_path).convert("RGB").resize((224, 224))
@@ -79,7 +75,7 @@ def predict_skin_tone(img_path):
     return predicted_class, confidence, probabilities
 
 # ============================================
-# Get Clothing + Accessory Suggestions (Gemini decides colors itself)
+# Get Clothing + Accessory Suggestions
 # ============================================
 def get_clothing_suggestions(probabilities, clothing_type, size, occasion):
     prob_str = ", ".join([f"{k}: {v}%" for k, v in probabilities.items()])
@@ -91,33 +87,25 @@ A machine learning model analyzed a person's face and produced these skin tone p
 {prob_str}
 
 Based on established color theory and skin undertone matching principles, decide for 
-yourself which colors would best complement this specific skin tone profile (treat the 
-percentages as a blend, not just the top category).
+yourself which colors would best complement this specific skin tone profile.
 
 Then:
-
 1. Search the live web to find REAL, currently listed {clothing_type} products in size {size}, 
    suitable for a {occasion} occasion, in the colors you determined suit this skin tone.
+2. Also give brief, minimal accessory color guidance — one short recommended color each 
+   for: watch strap/case, shoes, and belt.
 
-2. Also give brief, minimal accessory color guidance — just one short recommended color each 
-   for: watch strap/case, shoes, and belt. Do not search for or list specific accessory 
-   products, just the recommended colors with a one-line reason.
-
-Search across multiple online stores — Myntra, Ajio, Flipkart, Amazon India, Nykaa Fashion, 
-or any other legitimate retailer. Do not limit yourself to one website.
+Search across Myntra, Ajio, Flipkart, Amazon India, Nykaa Fashion, or other legitimate retailers.
 
 STRICT RULES:
-1. You MUST use Google Search to find the clothing products. Do not answer from memory alone.
-2. Every "link" you provide MUST be a URL that was actually returned by your search — 
-   copy it exactly as found. Do NOT construct, guess, modify, or shorten any URL.
-3. If you cannot find a real product for a given color/type combination after searching, 
-   skip it rather than inventing one.
-4. Only recommend clothing from: Shirts, T-Shirts, Polo Shirts, Hoodies, Sweatshirts, Jackets, 
-   Kurtas, Jeans, Chinos, Trousers, Cargo Pants, Shorts, Sneakers, Formal Shoes.
-5. Do NOT search for or list accessories as purchasable products — only mention their colors 
-   in the "accessory_guidance" section.
+1. You MUST use Google Search to find the clothing products.
+2. Every "link" MUST be a URL actually returned by your search — copy it exactly.
+3. If you cannot find a real product, skip it rather than inventing one.
+4. Only recommend: Shirts, T-Shirts, Polo Shirts, Hoodies, Sweatshirts, Jackets, Kurtas, 
+   Jeans, Chinos, Trousers, Cargo Pants, Shorts, Sneakers, Formal Shoes.
+5. Do NOT list accessories as purchasable products — only mention colors in accessory_guidance.
 
-Return ONLY a valid JSON object, with no extra text before or after it, no markdown formatting:
+Return ONLY a valid JSON object, no extra text, no markdown:
 {{
   "accessory_guidance": {{
     "watch": "recommended color + short reason",
@@ -141,13 +129,10 @@ Give 5-6 genuine clothing results, covering different suitable colors.
     response = gemini_client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
-        config=types.GenerateContentConfig(
-            tools=[google_search_tool]
-        )
+        config=types.GenerateContentConfig(tools=[google_search_tool])
     )
 
     raw_text = response.text.strip()
-
     start_idx = raw_text.find('{')
     end_idx = raw_text.rfind('}')
 
